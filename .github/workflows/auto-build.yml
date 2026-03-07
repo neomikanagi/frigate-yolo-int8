@@ -1,0 +1,110 @@
+name: Auto Build YOLO INT8 Matrix
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: Check upstream version
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LATEST_VER=$(curl -s https://pypi.org/pypi/ultralytics/json | jq -r .info.version)
+          echo "version=$LATEST_VER" >> $GITHUB_OUTPUT
+          
+          if gh release view "$LATEST_VER" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        model: 
+          - yolo11s
+          - yolo11m
+          - yolo11l
+          - yolo26s
+          - yolo26m
+          - yolo26l
+        rknn_target:
+          - rk3568
+          - rk3576
+          - rk3588
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Build Docker image (No Cache)
+        run: docker build --no-cache -t yolo-builder .
+
+      - name: Run OpenVINO build script
+        if: matrix.rknn_target == 'rk3588'
+        env:
+          MODEL_NAME: ${{ matrix.model }}
+        run: |
+          docker run --rm \
+            -e MODEL_NAME=$MODEL_NAME \
+            -v ${{ github.workspace }}:/app \
+            yolo-builder python3 build_yolo_int8.py
+
+      - name: Run RKNN build script
+        env:
+          MODEL_NAME: ${{ matrix.model }}
+          RKNN_TARGET: ${{ matrix.rknn_target }}
+        run: |
+          docker run --rm \
+            -e MODEL_NAME=$MODEL_NAME \
+            -e RKNN_TARGET=$RKNN_TARGET \
+            -v ${{ github.workspace }}:/app \
+            yolo-builder python3 build_yolo_rknn.py
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.model }}-${{ matrix.rknn_target }}-zip
+          path: |
+            frigate_${{ matrix.model }}_int8_320.zip
+            frigate_${{ matrix.model }}_${{ matrix.rknn_target }}_int8_320.zip
+          if-no-files-found: ignore
+
+  release:
+    needs: [check-upstream, build]
+    if: always() && (needs.check-upstream.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-upstream.outputs.version }}
+          name: Ultralytics ${{ needs.check-upstream.outputs.version }} - INT8 Models
+          draft: false
+          prerelease: false
+          files: artifacts/*.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
