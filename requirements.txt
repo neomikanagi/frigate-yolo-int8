@@ -1,0 +1,12 @@
+ultralytics
+torch==2.2.1+cpu
+torchvision==0.17.1+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
+openvino==2024.2.0
+nncf==2.14.0
+onnx==1.16.1
+onnxslim
+onnxruntime
+numpy<2.0
+requests
+rknn-toolkit2
