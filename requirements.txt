@@ -5,8 +5,8 @@ torchvision==0.17.1+cpu
 openvino==2024.2.0
 nncf==2.14.0
 onnx==1.16.1
-onnxslim
-onnxruntime
+onnxslim<1.0
+onnxruntime<2.0
 numpy<2.0
 requests
-rknn-toolkit2
+rknn-toolkit2<3.0

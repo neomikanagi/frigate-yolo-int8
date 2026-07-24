@@ -17,11 +17,11 @@ def main():
 
     if not os.path.exists("datasets/coco128"):
         print("[INFO] Pre-downloading calibration dataset (COCO128)...")
-        try: 
+        try:
             YOLO(f"{MODEL_NAME}.pt").export(format='openvino', int8=True, data='coco128.yaml', imgsz=32)
             gc.collect()
-        except: 
-            pass
+        except Exception as e:
+            print(f"[WARNING] Calibration dataset pre-download failed, continuing anyway: {e}")
 
     print(f"[INFO] Loading {MODEL_NAME}.pt...")
     model = YOLO(f"{MODEL_NAME}.pt")

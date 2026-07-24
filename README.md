@@ -14,7 +14,9 @@ An automated build pipeline that generates highly optimized OpenVINO INT8 quanti
 
 To get the maximum performance and avoid the "Smurf/Avatar effect" (wrong color channels lowering confidence scores), you **must** configure your `frigate.yml` to match the hardcoded PPP settings.
 
-Add the following to your `frigate.yml`:
+Pick **one** of the two options below depending on your hardware — do not merge them, `frigate.yml` only allows a single `detectors`/`model` section.
+
+### Option A: Intel CPU/iGPU (OpenVINO)
 
 ```yaml
 detectors:
@@ -28,10 +30,13 @@ model:
   width: 320
   height: 320
   input_tensor: nchw         # CRITICAL: Matches the PrePostProcessor layout
-  input_pixel_format: rgb    # CRITICAL: Prevents BGR/RGB color inversion 
+  input_pixel_format: rgb    # CRITICAL: Prevents BGR/RGB color inversion
   labelmap_path: /config/labelmap.txt
+```
 
+### Option B: Rockchip NPU (RKNN)
 
+```yaml
 detectors:
   rknn:
     type: rknn
@@ -43,3 +48,4 @@ model:
   height: 320
   input_tensor: nhwc
   input_pixel_format: rgb
+```
