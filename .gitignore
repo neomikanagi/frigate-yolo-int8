@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.sqlite
+*.pt
+*.onnx
+*.zip
+*.rknn
+datasets/
+runs/
+*_int8_openvino_model/
+*_int8_pack_*/
+dataset.txt
+release.json
+artifacts/

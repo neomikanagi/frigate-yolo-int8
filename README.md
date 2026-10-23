@@ -4,11 +4,22 @@ An automated build pipeline that generates highly optimized OpenVINO INT8 quanti
 
 ## 🚀 Features
 
-* **Upstream Tracking:** Automatically monitors the official `ultralytics` PyPI package. When a new version is released, it triggers a matrix build and publishes a new GitHub Release automatically.
+* **Upstream Tracking:** Automatically monitors the official `ultralytics` PyPI package and builds that exact version. A release is published only after all six models succeed and all 24 OpenVINO/RKNN archives pass validation. Incomplete releases are retried rather than treated as finished.
 * **Hardware Optimized:** Uses `NNCF` mixed INT8 quantization for the best balance of accuracy and inference speed, especially on older Intel CPUs and iGPUs (e.g., Intel 6th Gen Skylake).
 * **Zero-Copy Pipeline (PPP Fixed):** The models are built with OpenVINO PrePostProcessor (PPP) hardcoded. They directly accept `uint8` format, `NCHW` layout, and `RGB` color space. This prevents Frigate from doing expensive CPU-bound floating-point conversions and saves memory bandwidth.
 * **Included Models:** * YOLO11 (Small, Medium, Large) - Recommended for older hardware for supreme stability and low latency.
   * YOLO26 (Small, Medium, Large) - The latest NMS-Free architecture (Note: May cause numeric overflow/hallucinations on older non-VNNI hardware).
+
+## Build and test
+
+Run regression tests with `python3 -m unittest discover -s tests -v` (stdlib only).
+For a local container build, use `docker build --build-arg ULTRALYTICS_VERSION=<version> -t yolo-builder .`.
+The GitHub Actions **Run workflow** button forces a full rebuild, including an existing release.
+
+RKNN Toolkit 2.5.0 is pinned. Its `seperate_conv_rs_split` and
+`fuse_exmatmul_add_mul_exsoftmax13_exmatmul_to_sdpa` fusion passes crash on the
+YOLO11/YOLO26 graphs, so these two optimizations are disabled as recommended by
+the compiler diagnostics. INT8 quantization remains enabled for all three targets.
 
 ## 🛠️ How to Use in Frigate
 

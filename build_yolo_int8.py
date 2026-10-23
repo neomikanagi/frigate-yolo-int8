@@ -56,8 +56,7 @@ def main():
         ov.save_model(ov_model, final_xml_path, compress_to_fp16=True)
         print(f"[SUCCESS] Model PPP fixed and saved to: {final_xml_path}")
     else:
-        print(f"[ERROR] XML file not found in {export_path}!")
-        return
+        raise RuntimeError(f"XML file not found in {export_path}")
 
     print(f"[INFO] Packaging {MODEL_NAME}...")
     with zipfile.ZipFile(ZIP_NAME, 'w', zipfile.ZIP_DEFLATED) as z:

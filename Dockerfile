@@ -16,7 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
+ARG ULTRALYTICS_VERSION
+RUN touch /tmp/constraints.txt \
+    && if [ -n "$ULTRALYTICS_VERSION" ]; then \
+         printf 'ultralytics==%s\n' "$ULTRALYTICS_VERSION" > /tmp/constraints.txt; \
+       fi \
+    && pip install --no-cache-dir --root-user-action=ignore \
+         -r requirements.txt -c /tmp/constraints.txt
 
 COPY build_yolo_int8.py .
 COPY build_yolo_rknn.py .
