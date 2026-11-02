@@ -2,7 +2,7 @@
 
 ## 2026-11-02 — pi（grok-4.7）
 
-- **状态：** 已改判定并推送。每日定时仍在，但只有权重或 OpenVINO/ONNX 导出图变了才编译；当前 8.4.198 对 8.4.197 判定为 upstream unchanged。手动跑一次最新版后只留该次 Release，历史 Release 和 Actions 产物删掉。
+- **状态：** 已完成。每日 03:00 UTC 仍检查，但只有权重或 OpenVINO/ONNX 导出图变了才编译。手动跑 [41385387400](https://github.com/neomikanagi/frigate-yolo-int8/actions/runs/41385387400) 成功，只剩 [8.4.198](https://github.com/neomikanagi/frigate-yolo-int8/releases/tag/8.4.198)（24 个包），删掉 71 个旧 Release 和 372 个 Actions 产物。
 - **改了：** `upstream_watch.py` 用权重 digest 加导出图文件 blob 做指纹；定时任务不再因为 PyPI patch 号变了就全量编译。发布成功后删掉其它 Release/标签和 Actions artifacts。
 - **为什么 / 思路：** 权重仍在 `ultralytics/assets` v8.4.0，每日 patch 多是 YAML/CI/文档。用版本号当上游变化，所以闲着也每天编一次。不要改回「有新 patch 就编」，也不要恢复失败仍发布、只看 tag 就跳过。
 - **请你：** 无。
