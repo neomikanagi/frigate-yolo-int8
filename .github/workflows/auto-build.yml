@@ -11,6 +11,8 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
       should_build: ${{ steps.check.outputs.should_build }}
+      fingerprint: ${{ steps.check.outputs.fingerprint }}
+      weights_tag: ${{ steps.check.outputs.weights_tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,22 +20,16 @@ jobs:
       - name: Regression tests
         run: python3 -m unittest discover -s tests -v
 
-      - name: Check upstream version
+      - name: Check upstream change
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          LATEST_VER=$(curl -fsSL --retry 3 https://pypi.org/pypi/ultralytics/json | jq -er '.info.version | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))')
-          echo "version=$LATEST_VER" >> "$GITHUB_OUTPUT"
-
-          if gh release view "$LATEST_VER" --repo "$GITHUB_REPOSITORY" \
-               --json assets,isDraft,isPrerelease > release.json \
-             && python3 validate_artifacts.py --release-json release.json; then
-            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python3 upstream_watch.py check --repo "$GITHUB_REPOSITORY" --force | tee -a "$GITHUB_OUTPUT"
           else
-            echo "Release absent or incomplete; rebuilding all models."
-            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            python3 upstream_watch.py check --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -90,6 +86,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.model }}-zip
+          retention-days: 1
           path: |
             frigate_${{ matrix.model }}_int8_320.zip
             frigate_${{ matrix.model }}_rk3568_int8_320.zip
@@ -103,6 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -121,8 +119,27 @@ jobs:
         with:
           tag_name: ${{ needs.check-upstream.outputs.version }}
           name: Ultralytics ${{ needs.check-upstream.outputs.version }} - INT8 Models
+          body: |
+            OpenVINO and RKNN INT8 models for Frigate.
+            ultralytics: ${{ needs.check-upstream.outputs.version }}
+            weights-tag: ${{ needs.check-upstream.outputs.weights_tag }}
+            upstream-fingerprint: ${{ needs.check-upstream.outputs.fingerprint }}
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
           files: artifacts/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release view "${{ needs.check-upstream.outputs.version }}" --repo "$GITHUB_REPOSITORY" \
+            --json assets,isDraft,isPrerelease > release.json
+          python3 validate_artifacts.py --release-json release.json
+
+      - name: Delete older releases and Actions artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 upstream_watch.py prune --repo "$GITHUB_REPOSITORY" --keep "${{ needs.check-upstream.outputs.version }}"

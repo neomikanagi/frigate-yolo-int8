@@ -4,7 +4,7 @@ An automated build pipeline that generates highly optimized OpenVINO INT8 quanti
 
 ## 🚀 Features
 
-* **Upstream Tracking:** Automatically monitors the official `ultralytics` PyPI package and builds that exact version. A release is published only after all six models succeed and all 24 OpenVINO/RKNN archives pass validation. Incomplete releases are retried rather than treated as finished.
+* **Upstream Tracking:** A daily check looks at ultralytics, and a build starts only when the pretrained weights or the OpenVINO/ONNX export graph change. A new patch version by itself does not rebuild. A release is published only after all six models succeed and all 24 archives pass validation, and older releases are removed so only the latest assets remain. Incomplete releases are retried rather than treated as finished.
 * **Hardware Optimized:** Uses `NNCF` mixed INT8 quantization for the best balance of accuracy and inference speed, especially on older Intel CPUs and iGPUs (e.g., Intel 6th Gen Skylake).
 * **Zero-Copy Pipeline (PPP Fixed):** The models are built with OpenVINO PrePostProcessor (PPP) hardcoded. They directly accept `uint8` format, `NCHW` layout, and `RGB` color space. This prevents Frigate from doing expensive CPU-bound floating-point conversions and saves memory bandwidth.
 * **Included Models:** * YOLO11 (Small, Medium, Large) - Recommended for older hardware for supreme stability and low latency.
