@@ -2,8 +2,9 @@
 
 ## 现在能否用
 
-- 流水线产出 YOLO26 s/m/l × 6 个包（OpenVINO INT8、OpenVINO FP16、ONNX、RKNN rk3568/rk3576/rk3588），每个包过质量闸门才发布。yolo26l 三个构建脚本已在本地按 CI 方式跑通；s/m 的 RKNN 闸门数值见下。
-- 实机验证（yolo26l）：HD 530 核显 FP16 52 ms、INT8 55 ms 且 INT8 多 7 个误检，Gen9 核显用 FP16；RK3566 RKNN INT8 混合版在 Frigate 界面 83 ms，98 张家用摄像头画面上人/猫 0 漏检。
+- 流水线产出 YOLO26 s/m/l × 6 个包（OpenVINO INT8、OpenVINO FP16、ONNX、RKNN rk3568/rk3576/rk3588），每个包过质量闸门才发布。Release 8.4.215 由 Actions 构建，18 个包全部过闸门（数值见 CI 日志的 `[GATE]` 行；最低是 26s RKNN 召回 94%，闸门 90%）。
+- 实机验证（yolo26l，用的是发布出来的包）：HD 530 核显 FP16 负载下 56 ms（INT8 约 61–64 ms，且多误检），Gen9 核显用 FP16；RK3566 RKNN INT8 混合版在 Frigate 界面 82–87 ms，98 张家用摄像头画面上人/猫 0 漏检、3 个误检。RK3566 两路摄像头同时有运动时 NPU 接近满载，会跳帧；要更多余量可换 26m。
+- `tools/frigate-yolo-sync.sh` 在两台设备实跑过：按 sha256 更新、容器内预跑、重启后等 API 出检测器才算健康；强制 3 秒超时验证过自动回滚。
 - AMD Ryzen AI（XDNA2）NPU 这一路产出 FP32 ONNX，frigate-xdna 自带检查器判定为 `yolo-raw` 兼容；NPU 编译由 sidecar 在机器上做（BF16）。HX 370 未经 frigate-xdna 认证，YOLO26 在其编译器上未测，买到机器后实测。
 
 ## 关键决定与坑
