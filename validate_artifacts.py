@@ -4,26 +4,31 @@ import json
 from pathlib import Path
 import zipfile
 
-MODELS = ("yolo11s", "yolo11m", "yolo11l", "yolo26s", "yolo26m", "yolo26l")
+MODELS = ("yolo26s", "yolo26m", "yolo26l")
 TARGETS = ("rk3568", "rk3576", "rk3588")
+SIZE = 320
 
 
 def expected_archives():
     archives = {}
     for model in MODELS:
-        archives[f"frigate_{model}_int8_320.zip"] = {
-            f"{model}_int8.xml", f"{model}_int8.bin"
-        }
-        for target in TARGETS:
-            archives[f"frigate_{model}_{target}_int8_320.zip"] = {
-                f"{model}_{target}_320.rknn"
+        for precision in ("int8", "fp16"):
+            archives[f"frigate_{model}_{precision}_{SIZE}.zip"] = {
+                f"{model}_{precision}.xml", f"{model}_{precision}.bin"
             }
+        archives[f"frigate_{model}_onnx_{SIZE}.zip"] = {f"{model}_{SIZE}.onnx"}
+        for target in TARGETS:
+            archives[f"frigate_{model}_{target}_int8_{SIZE}.zip"] = {f"{model}_{target}_{SIZE}.rknn"}
     return archives
+
+
+def archives_for(model):
+    return sorted(name for name in expected_archives() if name.startswith(f"frigate_{model}_"))
 
 
 def validate_release(release):
     """An existing tag is not proof of a complete published release."""
-    if release.get("isDraft") or release.get("isPrerelease"):
+    if release.get("isDraft") or release.get("isPrerelease") or release.get("draft") or release.get("prerelease"):
         raise ValueError("Release is not a published stable release")
     assets = release["assets"]
     names = {asset["name"] for asset in assets if asset["size"] > 0}
@@ -52,7 +57,15 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--directory", type=Path)
     group.add_argument("--release-json", type=Path)
+    group.add_argument("--models-json", action="store_true", help="print the build matrix as JSON")
+    group.add_argument("--archives-for", metavar="MODEL", help="print the archives one matrix job uploads")
     args = parser.parse_args()
+    if args.models_json:
+        print(json.dumps(list(MODELS)))
+        return
+    if args.archives_for:
+        print("\n".join(archives_for(args.archives_for)))
+        return
     try:
         if args.directory is not None:
             validate_directory(args.directory)

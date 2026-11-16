@@ -1,4 +1,4 @@
-# Dockerfile
+# Build environment for every package: Ultralytics export, OpenVINO + NNCF, RKNN Toolkit 2, ONNX Runtime.
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,5 +24,4 @@ RUN touch /tmp/constraints.txt \
     && pip install --no-cache-dir --root-user-action=ignore \
          -r requirements.txt -c /tmp/constraints.txt
 
-COPY build_yolo_int8.py .
-COPY build_yolo_rknn.py .
+COPY yolo_common.py build_onnx.py build_openvino.py build_rknn.py ./

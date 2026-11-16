@@ -1,4 +1,4 @@
-"""Build only when ultralytics weights or the export graph change. Stdlib only."""
+"""Build only when ultralytics weights, the export graph, or this pipeline change. Stdlib only."""
 import argparse
 import hashlib
 import json
@@ -8,12 +8,15 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from validate_artifacts import validate_release
+from validate_artifacts import MODELS, validate_release
 
 ULTRALYTICS = "ultralytics/ultralytics"
 ASSETS_REPO = "ultralytics/assets"
-WEIGHTS = ("yolo11s.pt", "yolo11m.pt", "yolo11l.pt", "yolo26s.pt", "yolo26m.pt", "yolo26l.pt")
+WEIGHTS = tuple(f"{model}.pt" for model in MODELS)
+# Files of this repository that change what gets built; editing them rebuilds on the next run.
+PIPELINE = ("build_openvino.py", "build_rknn.py", "build_onnx.py", "yolo_common.py", "requirements.txt", "Dockerfile")
 # Paths that change the OpenVINO/ONNX graph this pipeline compiles. A PyPI
 # patch that does not touch these, or the weight files, is not a rebuild.
 WATCH = (
@@ -22,7 +25,6 @@ WATCH = (
     "ultralytics/utils/export/openvino.py",
     "ultralytics/nn/tasks.py",
     "ultralytics/nn/modules/",
-    "ultralytics/cfg/models/11/yolo11.yaml",
     "ultralytics/cfg/models/26/yolo26.yaml",
 )
 FINGERPRINT_KEY = "upstream-fingerprint"
@@ -50,7 +52,14 @@ def parse_fingerprint(body):
     return match.group(1) if match else None
 
 
-def fingerprint(weights_tag, weight_digests, blobs):
+def pipeline_digest(root=Path(__file__).resolve().parent):
+    digest = hashlib.sha256()
+    for name in PIPELINE:
+        digest.update(name.encode() + b"\0" + (root / name).read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def fingerprint(weights_tag, weight_digests, blobs, pipeline=None):
     missing = [path for path in WATCH if not path.endswith("/") and path not in blobs]
     if missing:
         raise ValueError(f"missing watched files: {missing}")
@@ -60,12 +69,14 @@ def fingerprint(weights_tag, weight_digests, blobs):
     lines = [f"weights-tag {weights_tag}"]
     lines.extend(f"weight {name} {weight_digests[name]}" for name in WEIGHTS)
     lines.extend(f"blob {path} {blobs[path]}" for path in sorted(blobs) if is_watched(path))
+    if pipeline:
+        lines.append(f"pipeline {pipeline}")
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
 def release_body(version, weights_tag, fingerprint_value):
     return (
-        "OpenVINO and RKNN INT8 models for Frigate.\n"
+        "YOLO models for Frigate: OpenVINO INT8/FP16, RKNN INT8, ONNX.\n"
         f"ultralytics: {version}\n"
         f"weights-tag: {weights_tag}\n"
         f"{FINGERPRINT_KEY}: {fingerprint_value}\n"
@@ -157,7 +168,7 @@ def fetch_fingerprint(token, ref):
     blobs = _tree_blobs(token, ref)
     weights_tag = parse_asset_release(_downloads_py(token, ref))
     resolved_tag, digests = _weight_digests(token, weights_tag)
-    return fingerprint(resolved_tag, digests, blobs), resolved_tag
+    return fingerprint(resolved_tag, digests, blobs, pipeline_digest()), resolved_tag
 
 
 def _release_or_none(repo, tag, token):

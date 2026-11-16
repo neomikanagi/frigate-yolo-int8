@@ -1,0 +1,21 @@
+# /etc/default/frigate-yolo-sync — read by /usr/local/bin/frigate-yolo-sync.sh
+
+REPO=neomikanagi/frigate-yolo-int8
+MODEL_DIR=/docker/frigate/config/model_cache   # host path of Frigate's /config/model_cache
+CONTAINER_MODEL_DIR=/config/model_cache
+CONFIG_YAML=/docker/frigate/config/config.yaml
+FRIGATE_CONTAINER=frigate
+
+# One or more release assets (space separated). Pick the one for your hardware:
+#   Intel Gen9-Gen11 iGPU (HD/UHD 5xx-6xx):   frigate_yolo26l_fp16_320.zip
+#   Intel CPU with VNNI, Xe/Arc GPU, NPU:      frigate_yolo26l_int8_320.zip
+#   Rockchip RK3566/RK3568:                     frigate_yolo26l_rk3568_int8_320.zip
+#   Rockchip RK3576 / RK3588:                   frigate_yolo26l_rk3576_int8_320.zip / frigate_yolo26l_rk3588_int8_320.zip
+#   AMD Ryzen AI NPU (frigate-xdna), ROCm:      frigate_yolo26l_onnx_320.zip
+ASSETS="frigate_yolo26l_fp16_320.zip"
+
+RESTART_ON_UPDATE=1   # restart Frigate after a new model is installed
+PRUNE=1               # delete other frigate_* model folders that config.yaml does not use
+HEALTH_TIMEOUT=300    # seconds to wait for Frigate before rolling back
+
+# GITHUB_TOKEN=       # only if the GitHub API rate limit is hit

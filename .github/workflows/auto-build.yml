@@ -1,4 +1,4 @@
-name: Auto Build YOLO INT8 Matrix
+name: Build Frigate YOLO models
 
 on:
   schedule:
@@ -13,12 +13,20 @@ jobs:
       should_build: ${{ steps.check.outputs.should_build }}
       fingerprint: ${{ steps.check.outputs.fingerprint }}
       weights_tag: ${{ steps.check.outputs.weights_tag }}
+      models: ${{ steps.models.outputs.models }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Regression tests
-        run: python3 -m unittest discover -s tests -v
+        run: |
+          pip install --quiet 'numpy<2.0'
+          python -m unittest discover -s tests -v
 
       - name: Check upstream change
         id: check
@@ -27,29 +35,28 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python3 upstream_watch.py check --repo "$GITHUB_REPOSITORY" --force | tee -a "$GITHUB_OUTPUT"
+            python upstream_watch.py check --repo "$GITHUB_REPOSITORY" --force | tee -a "$GITHUB_OUTPUT"
           else
-            python3 upstream_watch.py check --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
+            python upstream_watch.py check --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
           fi
+
+      - name: Model matrix
+        id: models
+        run: echo "models=$(python validate_artifacts.py --models-json)" >> "$GITHUB_OUTPUT"
 
   build:
     needs: check-upstream
-    if: needs.check-upstream.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.check-upstream.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        model:
-          - yolo11s
-          - yolo11m
-          - yolo11l
-          - yolo26s
-          - yolo26m
-          - yolo26l
+        model: ${{ fromJSON(needs.check-upstream.outputs.models) }}
     permissions:
-      contents: write
-      actions: read
-
+      contents: read
+    env:
+      MODEL_NAME: ${{ matrix.model }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -59,39 +66,28 @@ jobs:
           ULTRALYTICS_VERSION: ${{ needs.check-upstream.outputs.version }}
         run: docker build --build-arg ULTRALYTICS_VERSION="$ULTRALYTICS_VERSION" -t yolo-builder .
 
-      - name: Run OpenVINO build script
-        env:
-          MODEL_NAME: ${{ matrix.model }}
-        run: |
-          docker run --rm \
-            -e MODEL_NAME=$MODEL_NAME \
-            -v ${{ github.workspace }}:/app \
-            yolo-builder python3 build_yolo_int8.py
+      - name: ONNX (AMD XDNA2 NPU via frigate-xdna, ROCm, CPU)
+        run: docker run --rm -e MODEL_NAME -v "$GITHUB_WORKSPACE:/app" yolo-builder python3 build_onnx.py
 
-      - name: Run RKNN build scripts (rk3568, rk3576, rk3588)
-        env:
-          MODEL_NAME: ${{ matrix.model }}
+      - name: OpenVINO INT8 and FP16
+        run: docker run --rm -e MODEL_NAME -v "$GITHUB_WORKSPACE:/app" yolo-builder python3 build_openvino.py
+
+      - name: RKNN INT8 (rk3568, rk3576, rk3588)
+        run: docker run --rm -e MODEL_NAME -v "$GITHUB_WORKSPACE:/app" yolo-builder python3 build_rknn.py
+
+      - name: Check this model's archives
         run: |
-          set -e
-          for target in rk3568 rk3576 rk3588; do
-            docker run --rm \
-              -e MODEL_NAME=$MODEL_NAME \
-              -e RKNN_TARGET=$target \
-              -v ${{ github.workspace }}:/app \
-              yolo-builder python3 build_yolo_rknn.py
+          set -euo pipefail
+          for name in $(python3 validate_artifacts.py --archives-for "$MODEL_NAME"); do
+            test -s "$name" || { echo "missing $name"; exit 1; }
           done
 
       - name: Upload artifacts
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.model }}-zip
           retention-days: 1
-          path: |
-            frigate_${{ matrix.model }}_int8_320.zip
-            frigate_${{ matrix.model }}_rk3568_int8_320.zip
-            frigate_${{ matrix.model }}_rk3576_int8_320.zip
-            frigate_${{ matrix.model }}_rk3588_int8_320.zip
+          path: frigate_${{ matrix.model }}_*.zip
           if-no-files-found: error
 
   release:
@@ -101,6 +97,9 @@ jobs:
     permissions:
       contents: write
       actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.check-upstream.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -111,35 +110,37 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Verify all 24 model archives
+      - name: Verify every model archive
         run: python3 validate_artifacts.py --directory artifacts
+
+      - name: Release notes
+        run: |
+          python3 upstream_watch.py body --version "$VERSION" \
+            --weights-tag "${{ needs.check-upstream.outputs.weights_tag }}" \
+            --fingerprint "${{ needs.check-upstream.outputs.fingerprint }}" > release-body.md
+
+      - name: Replace a release with the same tag
+        # A pipeline change rebuilds the same ultralytics version; devices compare asset sha256, not the tag.
+        run: gh release delete "$VERSION" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-upstream.outputs.version }}
-          name: Ultralytics ${{ needs.check-upstream.outputs.version }} - INT8 Models
-          body: |
-            OpenVINO and RKNN INT8 models for Frigate.
-            ultralytics: ${{ needs.check-upstream.outputs.version }}
-            weights-tag: ${{ needs.check-upstream.outputs.weights_tag }}
-            upstream-fingerprint: ${{ needs.check-upstream.outputs.fingerprint }}
+          name: Ultralytics ${{ needs.check-upstream.outputs.version }} - Frigate YOLO models
+          body_path: release-body.md
           draft: false
           prerelease: false
+          make_latest: true
           fail_on_unmatched_files: true
           files: artifacts/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify published release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          gh release view "${{ needs.check-upstream.outputs.version }}" --repo "$GITHUB_REPOSITORY" \
-            --json assets,isDraft,isPrerelease > release.json
+          gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > release.json
           python3 validate_artifacts.py --release-json release.json
 
       - name: Delete older releases and Actions artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 upstream_watch.py prune --repo "$GITHUB_REPOSITORY" --keep "${{ needs.check-upstream.outputs.version }}"
+        run: python3 upstream_watch.py prune --repo "$GITHUB_REPOSITORY" --keep "$VERSION"

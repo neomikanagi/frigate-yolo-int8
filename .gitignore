@@ -9,8 +9,11 @@ __pycache__/
 *.rknn
 datasets/
 runs/
-*_int8_openvino_model/
-*_int8_pack_*/
+*_openvino_model/
+*_openvino_320/
+*_rknn_320/
+*_rknn_calibration/
 dataset.txt
 release.json
+release-body.md
 artifacts/

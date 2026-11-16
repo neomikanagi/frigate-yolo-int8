@@ -1,9 +1,12 @@
+import tempfile
 import unittest
+from pathlib import Path
 
 from upstream_watch import (
-    decide, fingerprint, is_watched, parse_asset_release, parse_fingerprint,
-    release_body, releases_to_delete,
+    PIPELINE, WEIGHTS, decide, fingerprint, is_watched, parse_asset_release, parse_fingerprint,
+    pipeline_digest, release_body, releases_to_delete,
 )
+from validate_artifacts import MODELS
 
 DOWNLOADS = '''
 def attempt_download_asset(
@@ -21,17 +24,17 @@ BLOBS = {
     "ultralytics/utils/export/openvino.py": "c",
     "ultralytics/nn/tasks.py": "d",
     "ultralytics/nn/modules/head.py": "e",
-    "ultralytics/cfg/models/11/yolo11.yaml": "f",
     "ultralytics/cfg/models/26/yolo26.yaml": "g",
-    "docs/en/models/yolo11.md": "ignored",
+    "docs/en/models/yolo26.md": "ignored",
     "ultralytics/utils/export/mnn.py": "ignored",
 }
-DIGESTS = {name: f"sha256:{index}" for index, name in enumerate((
-    "yolo11s.pt", "yolo11m.pt", "yolo11l.pt", "yolo26s.pt", "yolo26m.pt", "yolo26l.pt",
-))}
+DIGESTS = {name: f"sha256:{index}" for index, name in enumerate(WEIGHTS)}
 
 
 class UpstreamWatchTests(unittest.TestCase):
+    def test_weights_follow_the_model_matrix(self):
+        self.assertEqual(WEIGHTS, tuple(f"{model}.pt" for model in MODELS))
+
     def test_watch_list_ignores_docs_and_unrelated_exporters(self):
         self.assertTrue(is_watched("ultralytics/nn/modules/head.py"))
         self.assertFalse(is_watched("ultralytics/utils/export/mnn.py"))
@@ -41,9 +44,24 @@ class UpstreamWatchTests(unittest.TestCase):
         self.assertEqual(parse_asset_release(DOWNLOADS), "v8.4.0")
         first = fingerprint("v8.4.0", DIGESTS, BLOBS)
         changed = dict(DIGESTS)
-        changed["yolo11s.pt"] = "sha256:new"
+        changed[WEIGHTS[0]] = "sha256:new"
         self.assertNotEqual(first, fingerprint("v8.4.0", changed, BLOBS))
         self.assertEqual(parse_fingerprint(release_body("8.4.198", "v8.4.0", first)), first)
+
+    def test_pipeline_change_changes_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in PIPELINE:
+                (root / name).write_text(name)
+            before = pipeline_digest(root)
+            (root / "build_rknn.py").write_text("changed")
+            after = pipeline_digest(root)
+        self.assertNotEqual(before, after)
+        self.assertNotEqual(fingerprint("v8.4.0", DIGESTS, BLOBS, before),
+                            fingerprint("v8.4.0", DIGESTS, BLOBS, after))
+
+    def test_repository_pipeline_files_exist(self):
+        self.assertEqual(len(pipeline_digest()), 64)
 
     def test_patch_version_alone_does_not_build(self):
         current = fingerprint("v8.4.0", DIGESTS, BLOBS)
