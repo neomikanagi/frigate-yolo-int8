@@ -76,7 +76,7 @@ model:
 
 Built with RKNN Toolkit 2.3.2, the `librknnrt` in Frigate `stable-rk`. Without `model_type` Frigate uses SSD post-processing and returns nothing. Run the container privileged so `/proc/device-tree/compatible` is readable. `device` is not an RKNN field.
 
-Why the RKNN build is hybrid: Frigate reads one tensor that holds box coordinates (0–320 px) and class scores (0–1). As a single INT8 tensor its step is about 1.3, so every class score becomes 0 — the NPU is busy and no object is ever reported. The network runs in INT8 up to the last head convolutions; only the box decode, sigmoid and concat run in FP16. On RK3566 the stock runtime returned shifted, duplicated boxes when convolutions or attention were also FP16, so nothing else is. That was measured on the board; the simulator does not show it.
+Why the RKNN build is hybrid: Frigate reads one tensor that holds box coordinates (0–320 px) and class scores (0–1). As a single INT8 tensor its step is about 1.3, so every class score becomes 0 — the NPU is busy and no object is ever reported. The network runs in INT8 up to the last head convolutions; only the box decode, sigmoid and concat run in FP16. On RK3566 the stock runtime returned shifted, duplicated boxes when convolutions or attention were also FP16, so nothing else is. That was measured on the board; the simulator does not show it. [`tools/rknn_board_check.py`](tools/rknn_board_check.py) runs that comparison inside the Frigate container on your own camera frames.
 
 ### AMD Ryzen AI NPU (XDNA2), e.g. Ryzen AI 9 HX (PRO) 370
 
