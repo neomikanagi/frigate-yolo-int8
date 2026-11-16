@@ -85,11 +85,20 @@ print("preflight ok", path)
 PY
 }
 
+# Inference speed of the first detector from the Frigate API, empty while Frigate is not serving.
+detector_speed() {
+    local stats
+    stats=$(docker exec "$FRIGATE_CONTAINER" curl -sf -m 5 http://127.0.0.1:5000/api/stats 2>/dev/null || true)
+    [[ "$stats" =~ \"inference_speed\":\ *([0-9.]+) ]] && echo "${BASH_REMATCH[1]}"
+    return 0
+}
+
 wait_healthy() {
     local since="$1" deadline=$((SECONDS + HEALTH_TIMEOUT)) status restarts
     while (( SECONDS < deadline )); do
         status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$FRIGATE_CONTAINER" 2>/dev/null || echo missing)
-        if [[ "$status" == healthy || "$status" == none ]]; then
+        # Docker can still report the pre-restart health for a moment; require the API to list a running detector.
+        if [[ ( "$status" == healthy || "$status" == none ) && -n "$(detector_speed)" ]]; then
             restarts=$(docker inspect -f '{{.RestartCount}}' "$FRIGATE_CONTAINER")
             sleep 60  # let the detector process load the model and run
             if [[ "$(docker inspect -f '{{.RestartCount}}' "$FRIGATE_CONTAINER")" != "$restarts" ]] \
@@ -221,7 +230,7 @@ main() {
             docker restart "$FRIGATE_CONTAINER" >/dev/null
             die "rolled back ${swapped[*]} to the previous model"
         fi
-        log "Frigate healthy with the new model; detector: $(docker exec "$FRIGATE_CONTAINER" curl -sf -m 10 http://127.0.0.1:5000/api/stats | grep -oE "\"inference_speed\": *[0-9.]+" | head -1 || echo unknown)"
+        log "Frigate healthy with the new model; detector inference $(detector_speed) ms"
     fi
 
     {
