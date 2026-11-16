@@ -16,10 +16,10 @@ For a local container build, use `docker build --build-arg ULTRALYTICS_VERSION=<
 The GitHub Actions **Run workflow** button forces a full rebuild, including an existing release.
 
 RKNN Toolkit 2.3.2 is pinned because Frigate `stable-rk` ships `librknnrt` 2.3.2.
-Toolkit 2.5.0 can be forced to compile these graphs by disabling two fusion passes,
-but that workaround is not accuracy-checked and the resulting file does not match
-the 2.3.2 runtime. Quantization is `w8a8`, mean 0, std 255. An RK3566 board loads
-the rk3568 archive.
+The RKNN archives are FP16, not INT8: Toolkit 2.3.2 INT8 keeps the box channels
+and zeroes the 80 class channels on RK3568, so the NPU runs and Frigate returns
+no objects. Mean is 0 and std is 255. An RK3566 board loads the rk3568 archive.
+The zip names still say `int8` so the existing release matrix stays valid.
 
 ## 🛠️ How to Use in Frigate
 

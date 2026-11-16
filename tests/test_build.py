@@ -102,17 +102,17 @@ class RKNNTests(unittest.TestCase):
             spec.loader.exec_module(self.module)
         self.module.assert_raw_yolo_onnx = Mock()
 
-    def test_success_uses_runtime_matching_int8(self):
+    def test_success_keeps_fp16_for_stock_runtime(self):
         self.module.main()
         options = self.rknn.config.call_args.kwargs
-        self.assertEqual(options["quantized_dtype"], "w8a8")
+        self.assertNotIn("quantized_dtype", options)
         self.assertNotIn("disable_rules", options)
         self.assertEqual(options["mean_values"], [[0, 0, 0]])
         self.assertEqual(options["std_values"], [[255, 255, 255]])
         self.assertEqual(options["target_platform"], "rk3588")
         self.assertIsNone(self.yolo.export.call_args.kwargs["nms"])
         self.module.assert_raw_yolo_onnx.assert_called_once_with("model.onnx")
-        self.assertTrue(self.rknn.build.call_args.kwargs["do_quantization"])
+        self.assertFalse(self.rknn.build.call_args.kwargs["do_quantization"])
         self.rknn.release.assert_called_once()
         with zipfile.ZipFile(self.module.ZIP_NAME) as archive:
             self.assertEqual(archive.namelist(), ["yolo11s_rk3588_320.rknn"])

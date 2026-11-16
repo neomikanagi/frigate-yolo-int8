@@ -57,21 +57,19 @@ def main():
     print(f"[INFO] Converting ONNX to RKNN for {RKNN_TARGET}...")
     rknn = RKNN(verbose=False)
     try:
-        # 2.3.2 matches Frigate stable-rk librknnrt. w8a8 is that toolkit's INT8.
-        # Do not pass 2.5.0 disable_rules; that API is absent here and those
-        # fusions are what 2.3.2 already compiles correctly.
+        # 2.3.2 matches Frigate stable-rk librknnrt. INT8 on this toolkit zeroes
+        # the 80 class channels on RK3568 while boxes still decode, so the NPU
+        # runs and Frigate reports nothing. FP16 keeps the class scores.
         ret = rknn.config(
             mean_values=[[0, 0, 0]],
             std_values=[[255, 255, 255]],
             target_platform=RKNN_TARGET,
-            quantized_dtype="w8a8",
-            quantized_algorithm="normal",
         )
         if ret != 0:
             raise RuntimeError(f"RKNN configuration failed: {ret}")
         if rknn.load_onnx(model=onnx_path) != 0:
             raise RuntimeError("Load ONNX failed")
-        if rknn.build(do_quantization=True, dataset="dataset.txt") != 0:
+        if rknn.build(do_quantization=False) != 0:
             raise RuntimeError("Build RKNN failed")
 
         final_rknn_path = OUTPUT_DIR / f"{MODEL_NAME}_{RKNN_TARGET}_{IMG_SIZE}.rknn"
