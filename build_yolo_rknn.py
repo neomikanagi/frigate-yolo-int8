@@ -25,7 +25,7 @@ def main():
     if OUTPUT_DIR.exists(): shutil.rmtree(OUTPUT_DIR)
     OUTPUT_DIR.mkdir()
 
-    print(f"[INFO] Preparing RKNN quantization for: {MODEL_NAME} ({RKNN_TARGET})")
+    print(f"[INFO] Preparing RKNN FP16 export for: {MODEL_NAME} ({RKNN_TARGET})")
 
     model = YOLO(f"{MODEL_NAME}.pt")
 
