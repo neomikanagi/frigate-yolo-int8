@@ -5,10 +5,9 @@ An automated build pipeline that generates highly optimized OpenVINO INT8 quanti
 ## 🚀 Features
 
 * **Upstream Tracking:** A daily check looks at ultralytics, and a build starts only when the pretrained weights or the OpenVINO/ONNX export graph change. A new patch version by itself does not rebuild. A release is published only after all six models succeed and all 24 archives pass validation, and older releases are removed so only the latest assets remain. Incomplete releases are retried rather than treated as finished.
-* **Hardware Optimized:** Uses `NNCF` mixed INT8 quantization for the best balance of accuracy and inference speed, especially on older Intel CPUs and iGPUs (e.g., Intel 6th Gen Skylake).
+* **Hardware Optimized:** OpenVINO INT8 for Intel CPUs. On a Gen9 iGPU such as HD 530, compare `device: CPU` before trusting GPU detections; a wrong class there is the GPU plugin, not the label map.
 * **Zero-Copy Pipeline (PPP Fixed):** The models are built with OpenVINO PrePostProcessor (PPP) hardcoded. They directly accept `uint8` format, `NCHW` layout, and `RGB` color space. This prevents Frigate from doing expensive CPU-bound floating-point conversions and saves memory bandwidth.
-* **Included Models:** * YOLO11 (Small, Medium, Large) - Recommended for older hardware for supreme stability and low latency.
-  * YOLO26 (Small, Medium, Large) - The latest NMS-Free architecture (Note: May cause numeric overflow/hallucinations on older non-VNNI hardware).
+* **Included Models:** YOLO11 and YOLO26, small / medium / large. Both are exported with `nms=None`, so the packaged head is the raw `[1, 84, 2100]` tensor Frigate `yolo-generic` parses. A build that emits the end-to-end `[1, 300, 6]` head fails instead of being published.
 
 ## Build and test
 
@@ -16,10 +15,11 @@ Run regression tests with `python3 -m unittest discover -s tests -v` (stdlib onl
 For a local container build, use `docker build --build-arg ULTRALYTICS_VERSION=<version> -t yolo-builder .`.
 The GitHub Actions **Run workflow** button forces a full rebuild, including an existing release.
 
-RKNN Toolkit 2.5.0 is pinned. Its `seperate_conv_rs_split` and
-`fuse_exmatmul_add_mul_exsoftmax13_exmatmul_to_sdpa` fusion passes crash on the
-YOLO11/YOLO26 graphs, so these two optimizations are disabled as recommended by
-the compiler diagnostics. INT8 quantization remains enabled for all three targets.
+RKNN Toolkit 2.3.2 is pinned because Frigate `stable-rk` ships `librknnrt` 2.3.2.
+Toolkit 2.5.0 can be forced to compile these graphs by disabling two fusion passes,
+but that workaround is not accuracy-checked and the resulting file does not match
+the 2.3.2 runtime. Quantization is `w8a8`, mean 0, std 255. An RK3566 board loads
+the rk3568 archive.
 
 ## 🛠️ How to Use in Frigate
 
@@ -42,8 +42,10 @@ model:
   height: 320
   input_tensor: nchw         # CRITICAL: Matches the PrePostProcessor layout
   input_pixel_format: rgb    # CRITICAL: Prevents BGR/RGB color inversion
-  labelmap_path: /config/labelmap.txt
+  labelmap_path: /labelmap/coco-80.txt
 ```
+
+On HD 530, start with `device: CPU`. Use `GPU` only if the same model does not flood one class.
 
 ### Option B: Rockchip NPU (RKNN)
 
@@ -51,12 +53,17 @@ model:
 detectors:
   rknn:
     type: rknn
-    device: rk3588
+    num_cores: 0
 
 model:
-  path: /config/model_cache/yolo11l_rk3588_320.rknn
+  path: /config/model_cache/yolo26l_rk3568_320.rknn  # RK3566 uses this rk3568 build
+  model_type: yolo-generic
   width: 320
   height: 320
   input_tensor: nhwc
   input_pixel_format: rgb
+  input_dtype: int
+  labelmap_path: /labelmap/coco-80.txt
 ```
+
+`device` is not a Frigate RKNN field. Omitting `model_type` selects SSD postprocessing, so the NPU can be busy while no boxes are returned. Run the container privileged so `/proc/device-tree/compatible` is visible.

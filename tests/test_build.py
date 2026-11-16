@@ -100,15 +100,18 @@ class RKNNTests(unittest.TestCase):
         self.module = importlib.util.module_from_spec(spec)
         with patch.dict("sys.modules", modules), patch.dict(os.environ, {"MODEL_NAME": "yolo11s", "RKNN_TARGET": "rk3588"}):
             spec.loader.exec_module(self.module)
+        self.module.assert_raw_yolo_onnx = Mock()
 
-    def test_success_keeps_int8_and_disables_only_broken_fusions(self):
+    def test_success_uses_runtime_matching_int8(self):
         self.module.main()
         options = self.rknn.config.call_args.kwargs
-        self.assertEqual(options["disable_rules"], [
-            "seperate_conv_rs_split",
-            "fuse_exmatmul_add_mul_exsoftmax13_exmatmul_to_sdpa",
-        ])
+        self.assertEqual(options["quantized_dtype"], "w8a8")
+        self.assertNotIn("disable_rules", options)
+        self.assertEqual(options["mean_values"], [[0, 0, 0]])
+        self.assertEqual(options["std_values"], [[255, 255, 255]])
         self.assertEqual(options["target_platform"], "rk3588")
+        self.assertIsNone(self.yolo.export.call_args.kwargs["nms"])
+        self.module.assert_raw_yolo_onnx.assert_called_once_with("model.onnx")
         self.assertTrue(self.rknn.build.call_args.kwargs["do_quantization"])
         self.rknn.release.assert_called_once()
         with zipfile.ZipFile(self.module.ZIP_NAME) as archive:

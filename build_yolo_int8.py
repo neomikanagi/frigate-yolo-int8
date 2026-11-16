@@ -6,8 +6,20 @@ from openvino.preprocess import PrePostProcessor, ColorFormat
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "yolo26s")
 IMG_SIZE = 320
+RAW_OUTPUT = [1, 84, (IMG_SIZE // 8) ** 2 + (IMG_SIZE // 16) ** 2 + (IMG_SIZE // 32) ** 2]
 OUTPUT_DIR = Path(f"{MODEL_NAME}_int8_pack_{IMG_SIZE}")
 ZIP_NAME = f"frigate_{MODEL_NAME}_int8_{IMG_SIZE}.zip"
+
+def assert_raw_yolo_openvino(ov_model):
+    """Frigate yolo-generic reads one raw head, not YOLO26's end-to-end [1, 300, 6]."""
+    if len(ov_model.outputs) != 1:
+        raise RuntimeError(f"expected one output, got {len(ov_model.outputs)}")
+    shape = [dim.get_length() for dim in ov_model.outputs[0].partial_shape]
+    if shape != RAW_OUTPUT:
+        raise RuntimeError(f"OpenVINO output is {shape}, want {RAW_OUTPUT}")
+    element_type = ov_model.inputs[0].get_element_type()
+    if element_type != ov.Type.u8:
+        raise RuntimeError(f"PPP input must be u8, got {element_type}")
 
 def main():
     if OUTPUT_DIR.exists(): shutil.rmtree(OUTPUT_DIR)
@@ -32,7 +44,8 @@ def main():
         imgsz=IMG_SIZE,
         int8=True,
         data="coco128.yaml",
-        dynamic=False
+        dynamic=False,
+        nms=None,
     )
 
     print(f"[INFO] Executing manual PPP fix (Input type U8 -> F32)...")
@@ -51,6 +64,7 @@ def main():
                                 .scale([255., 255., 255.])
 
         ov_model = ppp.build()
+        assert_raw_yolo_openvino(ov_model)
 
         final_xml_path = OUTPUT_DIR / f"{MODEL_NAME}_int8.xml"
         ov.save_model(ov_model, final_xml_path, compress_to_fp16=True)

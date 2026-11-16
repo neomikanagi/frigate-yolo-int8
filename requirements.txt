@@ -9,4 +9,4 @@ onnxslim==0.1.98
 onnxruntime==1.26.0
 numpy<2.0
 requests
-rknn-toolkit2==2.5.0
+rknn-toolkit2==2.3.2

@@ -6,8 +6,20 @@ from rknn.api import RKNN
 MODEL_NAME = os.environ.get("MODEL_NAME", "yolo11s")
 RKNN_TARGET = os.environ.get("RKNN_TARGET", "rk3588")
 IMG_SIZE = 320
+RAW_OUTPUT = [1, 84, (IMG_SIZE // 8) ** 2 + (IMG_SIZE // 16) ** 2 + (IMG_SIZE // 32) ** 2]
 OUTPUT_DIR = Path(f"{MODEL_NAME}_{RKNN_TARGET}_int8_pack_{IMG_SIZE}")
 ZIP_NAME = f"frigate_{MODEL_NAME}_{RKNN_TARGET}_int8_{IMG_SIZE}.zip"
+
+def assert_raw_yolo_onnx(path):
+    """Fail before RKNN conversion if Ultralytics exported the end-to-end head."""
+    import onnx
+    model = onnx.load(path)
+    outputs = list(model.graph.output)
+    if len(outputs) != 1:
+        raise RuntimeError(f"expected one ONNX output, got {len(outputs)}")
+    dims = [dim.dim_value for dim in outputs[0].type.tensor_type.shape.dim]
+    if dims != RAW_OUTPUT:
+        raise RuntimeError(f"ONNX output is {dims}, want {RAW_OUTPUT}")
 
 def main():
     if OUTPUT_DIR.exists(): shutil.rmtree(OUTPUT_DIR)
@@ -29,8 +41,10 @@ def main():
         format="onnx",
         imgsz=IMG_SIZE,
         dynamic=False,
-        simplify=True
+        simplify=True,
+        nms=None,
     )
+    assert_raw_yolo_onnx(onnx_path)
 
     img_dir = Path("datasets/coco128/images/train2017")
     img_files = sorted(img_dir.glob("*.jpg"))[:20]
@@ -43,19 +57,15 @@ def main():
     print(f"[INFO] Converting ONNX to RKNN for {RKNN_TARGET}...")
     rknn = RKNN(verbose=False)
     try:
-        # Toolkit 2.5.0 raises IndexError in these fusion passes for YOLO11
-        # (DFL Conv/Reshape/Split) and YOLO26 (attention). The compiler itself
-        # recommends disable_rules in the failure log; keep INT8 enabled.
+        # 2.3.2 matches Frigate stable-rk librknnrt. w8a8 is that toolkit's INT8.
+        # Do not pass 2.5.0 disable_rules; that API is absent here and those
+        # fusions are what 2.3.2 already compiles correctly.
         ret = rknn.config(
             mean_values=[[0, 0, 0]],
             std_values=[[255, 255, 255]],
             target_platform=RKNN_TARGET,
-            quantized_dtype='asymmetric_quantized-8',
-            quantized_algorithm='normal',
-            disable_rules=[
-                'seperate_conv_rs_split',
-                'fuse_exmatmul_add_mul_exsoftmax13_exmatmul_to_sdpa',
-            ],
+            quantized_dtype="w8a8",
+            quantized_algorithm="normal",
         )
         if ret != 0:
             raise RuntimeError(f"RKNN configuration failed: {ret}")
